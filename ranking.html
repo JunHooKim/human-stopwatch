@@ -20,11 +20,11 @@
     <div class="ranking-page">
       <div class="ranking-header">
         <h1 class="ranking-title">⏱️ 인간 스톱워치 실시간 랭킹</h1>
-        <span class="ranking-sub" id="targetTimeSub">목표 시간 -초</span>
+        <div id="leagueTabs" class="league-tabs"></div>
       </div>
 
       <div class="ranking-content">
-        <h2 class="board-title">🏆 TOP 10</h2>
+        <h2 class="board-title">🏆 TOP 10 <span id="targetTimeSub" class="ranking-sub"></span></h2>
         <div id="boardList" class="board-list"></div>
         <div id="boardEmpty" class="board-empty hidden">아직 등록된 기록이 없습니다</div>
       </div>

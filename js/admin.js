@@ -7,19 +7,22 @@
     loginError: document.getElementById("loginError"),
     loginBtn: document.getElementById("loginBtn"),
     logoutBtn: document.getElementById("logoutBtn"),
-    targetTimeInput: document.getElementById("targetTimeInput"),
-    saveTargetBtn: document.getElementById("saveTargetBtn"),
+    leagueSettingsList: document.getElementById("leagueSettingsList"),
     savedNote: document.getElementById("savedNote"),
     resetAllBtn: document.getElementById("resetAllBtn"),
     downloadCsvBtn: document.getElementById("downloadCsvBtn"),
     uploadCsvBtn: document.getElementById("uploadCsvBtn"),
     csvFileInput: document.getElementById("csvFileInput"),
     csvMessage: document.getElementById("csvMessage"),
+    scoreLeagueFilter: document.getElementById("scoreLeagueFilter"),
     scoreTableBody: document.getElementById("scoreTableBody"),
     scoreTableEmpty: document.getElementById("scoreTableEmpty"),
   };
 
+  let leagues = [];
+  let leagueByKey = {};
   let currentScores = [];
+  let activeFilterKey = "all";
   let unsubscribeScores = null;
   let editingId = null;
 
@@ -93,32 +96,54 @@
 
   // ----- 관리자 메인 초기화 -----
   async function initAdmin() {
-    await loadSettings();
+    await loadLeagues();
+    renderScoreLeagueFilter();
     await reloadScores();
     if (!unsubscribeScores) {
       unsubscribeScores = RankingApi.subscribeScores(reloadScores);
     }
   }
 
-  async function loadSettings() {
-    const settings = await RankingApi.fetchSettings();
-    els.targetTimeInput.value = Number(settings.target_time);
+  async function loadLeagues() {
+    leagues = await RankingApi.fetchLeagues();
+    leagueByKey = Object.fromEntries(leagues.map((l) => [l.key, l]));
+    renderLeagueSettings();
   }
 
-  els.saveTargetBtn.addEventListener("click", async () => {
-    const parsed = Number(els.targetTimeInput.value);
-    if (Number.isNaN(parsed) || parsed <= 0) return;
-    els.saveTargetBtn.disabled = true;
-    els.saveTargetBtn.textContent = "저장 중…";
-    try {
-      await RankingApi.updateTargetTime(parsed);
-      show(els.savedNote);
-      setTimeout(() => hide(els.savedNote), 2000);
-    } finally {
-      els.saveTargetBtn.disabled = false;
-      els.saveTargetBtn.textContent = "저장";
-    }
-  });
+  function renderLeagueSettings() {
+    els.leagueSettingsList.innerHTML = "";
+    leagues.forEach((league) => {
+      const row = document.createElement("div");
+      row.className = "league-settings-row";
+      row.innerHTML = `
+        <span class="label">${Format.escapeHtml(league.label)}</span>
+        <input type="number" step="0.1" min="0.1" class="settings-input" id="targetInput-${league.key}" value="${Number(league.target_time)}" />
+        <span>초</span>
+        <button class="btn btn-sm btn-primary" data-league="${league.key}">저장</button>
+      `;
+      row.querySelector("button").addEventListener("click", async (e) => {
+        const key = e.currentTarget.dataset.league;
+        const input = document.getElementById(`targetInput-${key}`);
+        const parsed = Number(input.value);
+        if (Number.isNaN(parsed) || parsed <= 0) return;
+        e.currentTarget.disabled = true;
+        e.currentTarget.textContent = "저장 중…";
+        try {
+          await RankingApi.updateLeagueTargetTime(key, parsed);
+          await loadLeagues();
+          show(els.savedNote);
+          setTimeout(() => hide(els.savedNote), 2000);
+        } finally {
+          const btn = document.querySelector(`button[data-league="${key}"]`);
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = "저장";
+          }
+        }
+      });
+      els.leagueSettingsList.appendChild(row);
+    });
+  }
 
   els.resetAllBtn.addEventListener("click", async () => {
     const ok = window.confirm("정말로 전체 랭킹을 초기화할까요? 이 작업은 되돌릴 수 없습니다.");
@@ -127,9 +152,39 @@
     await reloadScores();
   });
 
+  // ----- 리그 필터 탭 -----
+  function renderScoreLeagueFilter() {
+    els.scoreLeagueFilter.innerHTML = "";
+    const allTab = document.createElement("button");
+    allTab.className = `league-tab${activeFilterKey === "all" ? " active" : ""}`;
+    allTab.textContent = "전체";
+    allTab.addEventListener("click", () => {
+      activeFilterKey = "all";
+      renderScoreLeagueFilter();
+      renderScoreTable();
+    });
+    els.scoreLeagueFilter.appendChild(allTab);
+
+    leagues.forEach((league) => {
+      const tab = document.createElement("button");
+      tab.className = `league-tab${activeFilterKey === league.key ? " active" : ""}`;
+      tab.textContent = league.label;
+      tab.addEventListener("click", () => {
+        activeFilterKey = league.key;
+        renderScoreLeagueFilter();
+        renderScoreTable();
+      });
+      els.scoreLeagueFilter.appendChild(tab);
+    });
+  }
+
   // ----- CSV -----
   els.downloadCsvBtn.addEventListener("click", () => {
-    Csv.download(`human-stopwatch-scores-${Date.now()}.csv`, Csv.scoresToCsv(currentScores));
+    const scoped =
+      activeFilterKey === "all"
+        ? currentScores
+        : currentScores.filter((s) => s.league_key === activeFilterKey);
+    Csv.download(`human-stopwatch-scores-${Date.now()}.csv`, Csv.scoresToCsv(scoped));
   });
 
   els.uploadCsvBtn.addEventListener("click", () => els.csvFileInput.click());
@@ -167,16 +222,22 @@
   }
 
   function renderScoreTable() {
+    const rows =
+      activeFilterKey === "all"
+        ? currentScores
+        : currentScores.filter((s) => s.league_key === activeFilterKey);
+
     els.scoreTableBody.innerHTML = "";
-    if (currentScores.length === 0) {
+    if (rows.length === 0) {
       show(els.scoreTableEmpty);
       return;
     }
     hide(els.scoreTableEmpty);
 
-    currentScores.forEach((score, i) => {
+    rows.forEach((score, i) => {
       const tr = document.createElement("tr");
       const diff = score.measured_time - score.target_time;
+      const leagueLabel = leagueByKey[score.league_key]?.label ?? score.league_key;
       const nicknameCell =
         editingId === score.id
           ? `<input class="edit-input" id="editInput-${score.id}" value="${Format.escapeHtml(score.nickname)}" />`
@@ -185,6 +246,7 @@
       tr.innerHTML = `
         <td>${i + 1}</td>
         <td>${nicknameCell}</td>
+        <td>${Format.escapeHtml(leagueLabel)}</td>
         <td>${Format.seconds(score.target_time)}</td>
         <td>${Format.seconds(score.measured_time)}</td>
         <td>${Format.difference(diff)}</td>

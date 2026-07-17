@@ -1,10 +1,40 @@
 const RankingApi = {
   TOP_N: 10,
 
-  async fetchTopScores(limit = RankingApi.TOP_N) {
+  // ----- 리그 -----
+  async fetchLeagues() {
+    const { data, error } = await window.sb
+      .from("leagues")
+      .select("*")
+      .order("sort_order", { ascending: true });
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  subscribeLeagues(onChange) {
+    const channel = window.sb
+      .channel("leagues_changes_" + Math.random().toString(36).slice(2))
+      .on("postgres_changes", { event: "*", schema: "public", table: "leagues" }, () =>
+        onChange(),
+      )
+      .subscribe();
+    return () => window.sb.removeChannel(channel);
+  },
+
+  async updateLeagueTargetTime(key, targetTime) {
+    const { error } = await window.sb
+      .from("leagues")
+      .update({ target_time: targetTime })
+      .eq("key", key);
+    if (error) throw error;
+  },
+
+  // ----- 랭킹 조회 (리그별) -----
+  async fetchTopScores(leagueKey, limit = RankingApi.TOP_N) {
     const { data, error } = await window.sb
       .from("scores")
       .select("*")
+      .eq("league_key", leagueKey)
       .order("difference", { ascending: true })
       .order("created_at", { ascending: true })
       .limit(limit);
@@ -12,12 +42,14 @@ const RankingApi = {
     return data ?? [];
   },
 
-  async fetchRecentScores(limit = 15) {
-    const { data, error } = await window.sb
+  async fetchRecentScores(leagueKey, limit = 15) {
+    let query = window.sb
       .from("scores")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(limit);
+    if (leagueKey) query = query.eq("league_key", leagueKey);
+    const { data, error } = await query;
     if (error) throw error;
     return data ?? [];
   },
@@ -26,16 +58,18 @@ const RankingApi = {
     const { data, error } = await window.sb
       .from("scores")
       .select("*")
+      .order("league_key", { ascending: true })
       .order("difference", { ascending: true })
       .order("created_at", { ascending: true });
     if (error) throw error;
     return data ?? [];
   },
 
-  async fetchBestDifference() {
+  async fetchBestDifference(leagueKey) {
     const { data, error } = await window.sb
       .from("scores")
       .select("difference")
+      .eq("league_key", leagueKey)
       .order("difference", { ascending: true })
       .order("created_at", { ascending: true })
       .limit(1)
@@ -58,12 +92,14 @@ const RankingApi = {
     const { count: betterCount, error: e1 } = await window.sb
       .from("scores")
       .select("id", { count: "exact", head: true })
+      .eq("league_key", score.league_key)
       .lt("difference", score.difference);
     if (e1) throw e1;
 
     const { count: tieEarlierCount, error: e2 } = await window.sb
       .from("scores")
       .select("id", { count: "exact", head: true })
+      .eq("league_key", score.league_key)
       .eq("difference", score.difference)
       .lt("created_at", score.created_at);
     if (e2) throw e2;
@@ -76,28 +112,6 @@ const RankingApi = {
       .channel("scores_changes_" + Math.random().toString(36).slice(2))
       .on("postgres_changes", { event: "*", schema: "public", table: "scores" }, () =>
         onChange(),
-      )
-      .subscribe();
-    return () => window.sb.removeChannel(channel);
-  },
-
-  async fetchSettings() {
-    const { data, error } = await window.sb
-      .from("app_settings")
-      .select("*")
-      .eq("id", 1)
-      .maybeSingle();
-    if (error) throw error;
-    return data ?? { id: 1, target_time: 10 };
-  },
-
-  subscribeSettings(onChange) {
-    const channel = window.sb
-      .channel("settings_changes_" + Math.random().toString(36).slice(2))
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "app_settings" },
-        (payload) => onChange(payload.new),
       )
       .subscribe();
     return () => window.sb.removeChannel(channel);
@@ -125,14 +139,6 @@ const RankingApi = {
   async insertScoresBulk(inputs) {
     if (inputs.length === 0) return;
     const { error } = await window.sb.from("scores").insert(inputs);
-    if (error) throw error;
-  },
-
-  async updateTargetTime(targetTime) {
-    const { error } = await window.sb
-      .from("app_settings")
-      .update({ target_time: targetTime, updated_at: new Date().toISOString() })
-      .eq("id", 1);
     if (error) throw error;
   },
 };

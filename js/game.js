@@ -1,23 +1,23 @@
 (function () {
   const COUNTDOWN_STEPS = [3, 2, 1];
   const COUNTDOWN_STEP_MS = 800;
+  const LEAGUE_EMOJI = { "3s": "⚡", "5s": "🎯", "10s": "⏱️" };
 
   const els = {
     startScreen: document.getElementById("startScreen"),
+    leagueButtons: document.getElementById("leagueButtons"),
     runningScreen: document.getElementById("runningScreen"),
     resultScreen: document.getElementById("resultScreen"),
+    resultLeagueTitle: document.getElementById("resultLeagueTitle"),
     countdownOverlay: document.getElementById("countdownOverlay"),
     countdownValue: document.getElementById("countdownValue"),
     newRecordOverlay: document.getElementById("newRecordOverlay"),
     footerLink: document.getElementById("footerLink"),
-    targetTimeLabel: document.getElementById("targetTimeLabel"),
-    startBtn: document.getElementById("startBtn"),
     stopBtn: document.getElementById("stopBtn"),
     replayBtn: document.getElementById("replayBtn"),
     nicknameForm: document.getElementById("nicknameForm"),
     nicknameInput: document.getElementById("nicknameInput"),
     submitScoreBtn: document.getElementById("submitScoreBtn"),
-    resultTarget: document.getElementById("resultTarget"),
     resultMeasured: document.getElementById("resultMeasured"),
     resultDiff: document.getElementById("resultDiff"),
     rankBox: document.getElementById("rankBox"),
@@ -26,7 +26,8 @@
   };
 
   let phase = "idle"; // idle | countdown | running | result
-  let targetTime = 10;
+  let leagues = [];
+  let selectedLeague = null; // { key, label, target_time }
   let startTimestamp = null;
   let measuredTime = null;
   let difference = null;
@@ -38,13 +39,8 @@
     timeouts.forEach((t) => clearTimeout(t));
     timeouts.length = 0;
   }
-
-  function show(el) {
-    el.classList.remove("hidden");
-  }
-  function hide(el) {
-    el.classList.add("hidden");
-  }
+  function show(el) { el.classList.remove("hidden"); }
+  function hide(el) { el.classList.add("hidden"); }
 
   function setPhase(next) {
     phase = next;
@@ -66,13 +62,38 @@
     }
   }
 
-  function start() {
+  // ----- 리그 로드 & 버튼 렌더링 -----
+  async function loadLeagues() {
+    leagues = await RankingApi.fetchLeagues();
+    renderLeagueButtons();
+  }
+
+  function renderLeagueButtons() {
+    els.leagueButtons.innerHTML = "";
+    leagues.forEach((league, i) => {
+      const btn = document.createElement("button");
+      btn.className = "league-btn";
+      btn.dataset.key = league.key;
+      btn.innerHTML = `
+        <span class="league-emoji">${LEAGUE_EMOJI[league.key] ?? "🏁"}</span>
+        <span class="league-label">${Format.escapeHtml(league.label)}</span>
+        <span class="league-key-hint">키보드 ${i + 1}</span>
+      `;
+      btn.addEventListener("click", () => start(league));
+      els.leagueButtons.appendChild(btn);
+    });
+  }
+
+  RankingApi.subscribeLeagues(loadLeagues);
+
+  function start(league) {
     if (phase !== "idle" && phase !== "result") return;
+    if (!league) return;
+    selectedLeague = league;
     clearTimers();
     measuredTime = null;
     difference = null;
     setPhase("countdown");
-    els.countdownValue.className = "countdown-number";
 
     COUNTDOWN_STEPS.forEach((step, i) => {
       timeouts.push(
@@ -101,19 +122,19 @@
   }
 
   function stop() {
-    if (phase !== "running" || startTimestamp === null) return;
+    if (phase !== "running" || startTimestamp === null || !selectedLeague) return;
     const elapsedMs = performance.now() - startTimestamp;
     measuredTime = elapsedMs / 1000;
-    difference = Math.abs(measuredTime - targetTime);
+    difference = Math.abs(measuredTime - Number(selectedLeague.target_time));
     startTimestamp = null;
     renderResult();
     setPhase("result");
   }
 
   function renderResult() {
-    els.resultTarget.textContent = Format.seconds(targetTime);
+    els.resultLeagueTitle.textContent = selectedLeague.label;
     els.resultMeasured.textContent = Format.seconds(measuredTime);
-    const diffSigned = measuredTime - targetTime;
+    const diffSigned = measuredTime - Number(selectedLeague.target_time);
     els.resultDiff.textContent = Format.difference(diffSigned);
     els.resultDiff.classList.toggle("diff-good", Math.abs(diffSigned) < 0.05);
 
@@ -137,7 +158,7 @@
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (measuredTime === null || difference === null) return;
+    if (measuredTime === null || difference === null || !selectedLeague) return;
     const nickname = els.nicknameInput.value.trim();
     hide(els.resultError);
 
@@ -155,17 +176,18 @@
     els.submitScoreBtn.textContent = "등록 중…";
 
     try {
-      const bestBefore = await RankingApi.fetchBestDifference();
+      const bestBefore = await RankingApi.fetchBestDifference(selectedLeague.key);
       const saved = await RankingApi.insertScore({
         nickname,
-        target_time: targetTime,
+        league_key: selectedLeague.key,
+        target_time: Number(selectedLeague.target_time),
         measured_time: measuredTime,
         difference,
       });
       const rank = await RankingApi.fetchRankOf(saved);
 
       hide(els.nicknameForm);
-      els.rankBox.textContent = `🏅 현재 랭킹 ${rank}위`;
+      els.rankBox.textContent = `🏅 ${selectedLeague.label} 현재 랭킹 ${rank}위`;
       show(els.rankBox);
       show(els.registeredNote);
 
@@ -186,7 +208,6 @@
   }
 
   function celebrateNewRecord() {
-    // 파티클 생성
     els.newRecordOverlay.querySelectorAll(".new-record-particle").forEach((p) => p.remove());
     const colors = ["var(--accent)", "var(--gold)"];
     for (let i = 0; i < 18; i += 1) {
@@ -205,7 +226,6 @@
   }
 
   // ----- 이벤트 바인딩 -----
-  els.startBtn.addEventListener("click", start);
   els.stopBtn.addEventListener("click", stop);
   els.replayBtn.addEventListener("click", reset);
   els.nicknameForm.addEventListener("submit", handleSubmit);
@@ -215,28 +235,21 @@
     const isTyping = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA");
     if (isTyping) return;
 
-    if (e.code === "Enter" && (phase === "idle" || phase === "result")) {
+    if (["Digit1", "Digit2", "Digit3"].includes(e.code) && phase === "idle") {
+      const idx = Number(e.code.slice(-1)) - 1;
+      if (leagues[idx]) {
+        e.preventDefault();
+        start(leagues[idx]);
+      }
+    } else if (e.code === "Enter" && phase === "result") {
       e.preventDefault();
-      start();
+      reset();
     } else if (e.code === "Space" && phase === "running") {
       e.preventDefault();
       stop();
     }
   });
 
-  // ----- 목표 시간 로드 + 실시간 반영 -----
-  async function loadSettings() {
-    const settings = await RankingApi.fetchSettings();
-    targetTime = Number(settings.target_time) || 10;
-    els.targetTimeLabel.textContent = `${targetTime.toFixed(3)}초`;
-  }
-  loadSettings();
-  RankingApi.subscribeSettings((next) => {
-    if (next?.target_time !== undefined) {
-      targetTime = Number(next.target_time);
-      els.targetTimeLabel.textContent = `${targetTime.toFixed(3)}초`;
-    }
-  });
-
+  loadLeagues();
   setPhase("idle");
 })();

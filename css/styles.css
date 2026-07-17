@@ -194,6 +194,39 @@ a { color: inherit; text-decoration: none; }
 .start-button:hover { transform: scale(1.03); }
 .start-hint { color: var(--text-tertiary); font-size: 14px; margin-top: 4px; }
 
+.league-buttons {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 8px;
+}
+.league-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 148px;
+  padding: 28px 12px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s var(--ease-apple), border-color 0.2s, box-shadow 0.2s;
+}
+.league-btn:hover { border-color: var(--accent); }
+.league-btn:active { transform: scale(0.95); }
+.league-emoji { font-size: 32px; }
+.league-label { font-size: 17px; font-weight: 800; color: var(--text-primary); }
+.league-key-hint { font-size: 12px; color: var(--text-tertiary); }
+
+.result-league-title {
+  font-size: clamp(20px, 3.4vw, 26px);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--accent);
+}
+
 /* countdown overlay */
 .countdown-overlay {
   position: fixed;
@@ -369,6 +402,27 @@ a { color: inherit; text-decoration: none; }
 .ranking-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .ranking-title { font-size: clamp(28px, 3vw, 36px); font-weight: 800; letter-spacing: -0.02em; }
 .ranking-sub { color: var(--text-tertiary); font-size: 16px; font-weight: 600; }
+
+.league-tabs {
+  display: flex;
+  gap: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 6px;
+}
+.league-tab {
+  padding: 10px 22px;
+  border-radius: var(--radius-full);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  transition: background-color 0.2s var(--ease-apple), color 0.2s;
+}
+.league-tab.active {
+  background: var(--accent);
+  color: #fff;
+}
 .ranking-content { flex: 1; max-width: 900px; width: 100%; margin: 0 auto; }
 .board-title { font-size: clamp(28px, 3vw, 40px); font-weight: 800; margin-bottom: 8px; letter-spacing: -0.02em; }
 .board-empty { padding: 60px 0; text-align: center; color: var(--text-tertiary); font-size: 20px; }
@@ -437,6 +491,14 @@ a { color: inherit; text-decoration: none; }
 .settings-input:focus { border-color: var(--accent); }
 .saved-note { color: var(--success); font-size: 13px; font-weight: 600; }
 .divider { height: 1px; background: var(--border); margin: 4px 0; }
+
+.league-settings-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.league-settings-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px; border-radius: var(--radius-sm);
+  background: var(--bg-elevated); border: 1px solid var(--border);
+}
+.league-settings-row .label { font-weight: 700; min-width: 76px; }
 
 .table-wrap { overflow-x: auto; }
 .admin-table { width: 100%; border-collapse: collapse; font-size: 14px; }

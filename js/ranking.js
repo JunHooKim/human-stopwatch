@@ -1,5 +1,6 @@
 (function () {
   const els = {
+    leagueTabs: document.getElementById("leagueTabs"),
     boardList: document.getElementById("boardList"),
     boardEmpty: document.getElementById("boardEmpty"),
     ticker: document.getElementById("ticker"),
@@ -9,10 +10,27 @@
   };
 
   const MEDALS = { 1: "🥇", 2: "🥈", 3: "🥉" };
-  let prevBestId = null;
+  let leagues = [];
+  let activeLeagueKey = null;
+  const prevBestIdByLeague = {};
   let loaded = false;
 
   Theme.mountToggleButton();
+
+  function renderTabs() {
+    els.leagueTabs.innerHTML = "";
+    leagues.forEach((league) => {
+      const tab = document.createElement("button");
+      tab.className = `league-tab${league.key === activeLeagueKey ? " active" : ""}`;
+      tab.textContent = league.label;
+      tab.addEventListener("click", () => {
+        activeLeagueKey = league.key;
+        renderTabs();
+        reload();
+      });
+      els.leagueTabs.appendChild(tab);
+    });
+  }
 
   function renderBoard(scores) {
     els.boardList.innerHTML = "";
@@ -70,35 +88,43 @@
   }
 
   async function reload() {
+    if (!activeLeagueKey) return;
+    const activeLeague = leagues.find((l) => l.key === activeLeagueKey);
+    if (activeLeague) {
+      els.targetTimeSub.textContent = `· 목표 ${Number(activeLeague.target_time).toFixed(3)}초`;
+    }
+
     const [top, recent] = await Promise.all([
-      RankingApi.fetchTopScores(10),
-      RankingApi.fetchRecentScores(15),
+      RankingApi.fetchTopScores(activeLeagueKey, 10),
+      RankingApi.fetchRecentScores(activeLeagueKey, 15),
     ]);
     renderBoard(top);
     renderTicker(recent);
 
     if (top.length > 0) {
       const currentBestId = top[0].id;
+      const prevBestId = prevBestIdByLeague[activeLeagueKey];
       if (loaded && prevBestId && prevBestId !== currentBestId) {
         celebrateNewRecord();
       }
-      prevBestId = currentBestId;
+      prevBestIdByLeague[activeLeagueKey] = currentBestId;
     }
     loaded = true;
   }
 
-  async function loadSettings() {
-    const settings = await RankingApi.fetchSettings();
-    els.targetTimeSub.textContent = `목표 시간 ${Number(settings.target_time).toFixed(3)}초`;
+  async function init() {
+    leagues = await RankingApi.fetchLeagues();
+    if (leagues.length === 0) return;
+    activeLeagueKey = leagues[0].key;
+    renderTabs();
+    await reload();
   }
 
-  loadSettings();
-  RankingApi.subscribeSettings((next) => {
-    if (next?.target_time !== undefined) {
-      els.targetTimeSub.textContent = `목표 시간 ${Number(next.target_time).toFixed(3)}초`;
-    }
-  });
-
-  reload();
+  init();
   RankingApi.subscribeScores(reload);
+  RankingApi.subscribeLeagues(async () => {
+    leagues = await RankingApi.fetchLeagues();
+    renderTabs();
+    reload();
+  });
 })();
